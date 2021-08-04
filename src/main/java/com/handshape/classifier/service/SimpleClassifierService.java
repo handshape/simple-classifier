@@ -2,11 +2,14 @@ package com.handshape.classifier.service;
 
 import com.github.cliftonlabs.json_simple.JsonArray;
 import com.github.cliftonlabs.json_simple.JsonObject;
+import com.github.cliftonlabs.json_simple.Jsoner;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.UnsupportedEncodingException;
 import java.net.InetSocketAddress;
@@ -14,15 +17,20 @@ import java.net.URI;
 import java.net.URLDecoder;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import org.apache.commons.io.IOUtils;
 import org.apache.lucene.queryparser.classic.ParseException;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 
 /**
+ * Microservice that serves the simple classifier. Entry point for the
+ * application.
  *
  * @author jturner
  */
@@ -31,6 +39,13 @@ public class SimpleClassifierService {
     private File categoriesFile;
     private HttpServer server;
 
+    /**
+     * Entry point for the application.
+     *
+     * @param args The command line args passed from the OS
+     * @throws Exception if the requested port can't be opened or the config
+     * file can't be read
+     */
     public static void main(String[] args) throws Exception {
         if (args.length != 2) {
             System.err.println("This service takes two parameters: a port, and a path to a .properties file.");
@@ -45,7 +60,12 @@ public class SimpleClassifierService {
         service.start(port);
     }
 
-    public synchronized void start(int port) throws Exception {
+    /**
+     * Starts the service on the given port.
+     *
+     * @param port the port on which the service should listen.
+     */
+    public synchronized void start(int port) throws IOException {
         stop();
         server = HttpServer.create(new InetSocketAddress(port), 0);
         server.createContext("/", new EvaluationHandler());
@@ -53,6 +73,9 @@ public class SimpleClassifierService {
         server.start();
     }
 
+    /**
+     * Shuts down the server.
+     */
     public synchronized void stop() {
         if (server != null) {
             server.stop(5);
@@ -60,46 +83,73 @@ public class SimpleClassifierService {
         }
     }
 
-    class EvaluationHandler implements HttpHandler {
+    private class EvaluationHandler implements HttpHandler {
 
         LuceneEvaluator evaluator;
 
-        public EvaluationHandler() throws IOException, ParseException {
+        public EvaluationHandler() throws IOException {
             evaluator = new LuceneEvaluator(getCategoriesFile());
         }
 
         @Override
         public void handle(HttpExchange exchange) throws IOException {
-            System.out.println(exchange.getRequestURI());
-            Map<String, String> evaluationData = splitQuery(exchange.getRequestURI());
-            if (evaluationData != null && !evaluationData.isEmpty()) {
-                int code = 200;
-                String response;
-                JsonObject responseObject = new JsonObject();
-                try {
-                    Set<String> categories = evaluator.evaluate(evaluationData);
-                    JsonArray categoriesArray = new JsonArray(categories);
-                    responseObject.put("categories", categoriesArray);
-                } catch (Exception ex) {
-                    Logger.getLogger(SimpleClassifierService.class.getName()).log(Level.SEVERE, null, ex);
-                    response = "Error: " + ex.getMessage();
-                    code = 500;
+            //System.out.println(exchange.getRequestURI());
+            Map<String, String> evaluationData = null;
+            switch (exchange.getRequestMethod()) {
+                case "GET":
+                    evaluationData = splitQuery(exchange.getRequestURI());
+                    if (evaluationData != null && !evaluationData.isEmpty()) {
+                        evaluateAndRespond(evaluationData, exchange);
+                    } else {
+                        Document doc = Jsoup.parse(getClass().getResourceAsStream("/www/index.html"), "UTF-8", exchange.getRequestURI().toASCIIString());
+                        Element form = doc.body().appendElement("form");
+                        form.attr("method", "GET");
+                        form.attr("action", exchange.getRequestURI().toASCIIString());
+                        for (String field : evaluator.getFieldList()) {
+                            form.appendText(field);
+                            form.appendElement("br");
+                            form.appendElement("input").attr("type", "text").attr("class", "featureField").attr("name", field);
+                            form.appendElement("br");
+                        }
+                        form.appendElement("input").attr("type", "submit");
+                        sendResponse(exchange, 200, "text/html", doc.outerHtml());
+                        return;
+                    }
+                    break;
+                case "POST":
+                    try ( InputStream body = exchange.getRequestBody()) {
+                    if (exchange.getRequestHeaders().containsKey("Content-Type")) {
+                        if (exchange.getRequestHeaders().getFirst("Content-Type").startsWith("application/json")) {
+                            JsonObject jsonBody = Jsoner.deserialize(IOUtils.toString(body, "UTF-8"), new JsonObject());
+                            evaluationData = jsonToMap(jsonBody);
+                        } else if (exchange.getRequestHeaders().getFirst("Content-Type").startsWith("application/x-www-form-urlencoded")) {
+                            evaluationData = parseUrlFormEncoded(IOUtils.toString(body, "UTF-8"));
+                        }
+                    } else {
+                        evaluationData = parseUrlFormEncoded(IOUtils.toString(body, "UTF-8"));
+                    }
+                    break;
                 }
-                sendResponse(exchange, code, "application/json", responseObject.toJson());
-            } else {
-                Document doc = Jsoup.parse(getClass().getResourceAsStream("/www/index.html"), "UTF-8", exchange.getRequestURI().toASCIIString());
-                Element form = doc.body().appendElement("form");
-                form.attr("method", "GET");
-                form.attr("action", exchange.getRequestURI().toASCIIString());
-                for (String field : evaluator.getFieldList()) {
-                    form.appendText(field);
-                    form.appendElement("br");
-                    form.appendElement("input").attr("type", "text").attr("class", "featureField").attr("name", field);
-                    form.appendElement("br");
-                }
-                form.appendElement("input").attr("type", "submit");
-                sendResponse(exchange, 200, "text/html", doc.outerHtml());
+                default:
+                    break;
             }
+            evaluateAndRespond(evaluationData, exchange);
+        }
+
+        private void evaluateAndRespond(Map<String, String> evaluationData, HttpExchange exchange) throws IOException {
+            int code = 200;
+            String response;
+            JsonObject responseObject = new JsonObject();
+            try {
+                Set<String> categories = evaluator.evaluate(evaluationData);
+                JsonArray categoriesArray = new JsonArray(categories);
+                responseObject.put("categories", categoriesArray);
+            } catch (Exception ex) {
+                Logger.getLogger(SimpleClassifierService.class.getName()).log(Level.SEVERE, null, ex);
+                response = "Error: " + ex.getMessage();
+                code = 500;
+            }
+            sendResponse(exchange, code, "application/json", responseObject.toJson());
         }
 
         private void sendResponse(HttpExchange exchange, int responseCode, String contentType, String response) throws IOException {
@@ -110,9 +160,13 @@ public class SimpleClassifierService {
             os.close();
         }
 
-        public Map<String, String> splitQuery(URI url) throws UnsupportedEncodingException {
-            Map<String, String> query_pairs = new LinkedHashMap<>();
+        private Map<String, String> splitQuery(URI url) throws UnsupportedEncodingException {
             String query = url.getRawQuery();
+            return parseUrlFormEncoded(query);
+        }
+
+        private Map<String, String> parseUrlFormEncoded(String query) throws UnsupportedEncodingException {
+            Map<String, String> query_pairs = new LinkedHashMap<>();
             if (query != null) {
                 String[] pairs = query.split("&");
                 for (String pair : pairs) {
@@ -123,6 +177,14 @@ public class SimpleClassifierService {
                 }
             }
             return query_pairs;
+        }
+
+        private Map<String, String> jsonToMap(JsonObject jsonBody) {
+            TreeMap<String, String> returnable = new TreeMap<>();
+            for (Entry<String, Object> entry : jsonBody.entrySet()) {
+                returnable.put(entry.getKey(), String.valueOf(entry.getValue()));
+            }
+            return returnable;
         }
     }
 

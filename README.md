@@ -43,9 +43,12 @@ If you connect to your host and port with a web browser, you'll be presented
 with a simple UI for exercising the classifier. The UI will present one input 
 control for each field referenced in the query definition file.
 
-Classfiication jobs are sent to the service as GET requests with plain old URL
-form-encoded parameters. The response comes in the form of a JSON body of the 
-form:
+Classification jobs can be sent to the service in three ways: 
+* as GET requests with plain old URL form-encoded parameters. 
+* as POST requests with application/x-www-form-urlencoded parameters.
+* as POST requests with an application/json body. The body has to be a JSON object at the root level, whose keys and values are stringified bfore presentation to the evaluator.
+
+The response comes in the form of a JSON body of the form:
 
 ```
 {"categories":["category2","shoes"]}

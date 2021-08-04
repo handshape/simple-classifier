@@ -5,7 +5,6 @@ import java.io.IOException;
 import java.net.URISyntaxException;
 import java.util.Arrays;
 import java.util.Map;
-import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
 import static org.testng.Assert.*;
@@ -32,7 +31,8 @@ public class LuceneEvaluatorNGTest {
             assertEquals(instance.evaluate(evaluationData), Arrays.asList(new String[]{
                 "positiveTest1",
                 "positiveTest2",
-                "positiveTest3"
+                "positiveTest3",
+                "positiveTest4"
             }));
         }
     }

@@ -35,11 +35,18 @@ import org.apache.lucene.search.Query;
 import org.apache.lucene.search.TermQuery;
 
 /**
+ * Classifier that uses a set of Lucene queries to assign categories to
+ * passed-in maps of key-value pairs. This class watches the file that is passed
+ * in for changes, and will reload the categories at runtime.
  *
  * @author jturner
  */
 public class LuceneEvaluator implements Closeable {
 
+    /**
+     * Field name that will be used for query terms that have no specified
+     * field.
+     */
     public static final String DEFAULT_FIELD_NAME = "text";
 
     private Analyzer analyzer = new StandardAnalyzer();
@@ -47,6 +54,14 @@ public class LuceneEvaluator implements Closeable {
     private final FileWatcher watcher;
     private Map<String, Query> queries = new TreeMap<>();
 
+    /**
+     * Constructor for a new Lucene evaluator. Malformed queries get logged to
+     * stderr. The passed-in file is watched for changes at runtime.
+     *
+     * @param f A properties file from which the set of queries and categories
+     * will be loaded.
+     * @throws IOException if the properties file can't be read for any reason.
+     */
     public LuceneEvaluator(File f) throws IOException {
         myFile = f;
         loadCategories(myFile);
@@ -54,14 +69,19 @@ public class LuceneEvaluator implements Closeable {
         watcher.start();
     }
 
+    /**
+     * Manually stop the thread that watches for changes to the category file.
+     */
     public void stop() {
-        watcher.stopThread();
+        if (!watcher.isStopped()) {
+            watcher.stopThread();
+        }
     }
 
     private void loadCategories(File f) throws IOException {
         Properties p = new Properties();
         p.load(new FileInputStream(f));
-        queries.clear();
+        TreeMap<String, Query> newQueries = new TreeMap<>();
         QueryParser parser = new QueryParser("text", analyzer);
         parser.setAllowLeadingWildcard(true);
         for (Object o : p.keySet()) {
@@ -69,16 +89,26 @@ public class LuceneEvaluator implements Closeable {
             if (!key.contains(".")) {
                 try {
                     Query query = parser.parse(p.getProperty(key));
-                    queries.put(key, query);
+                    newQueries.put(key, query);
                 } catch (ParseException parseException) {
                     System.err.println("Error parsing category '" + key + "':");
                     System.err.println(parseException.getLocalizedMessage());
                 }
             }
         }
+        queries = newQueries;
     }
 
-    Set<String> evaluate(Map<String, String> evaluationData) {
+    /**
+     * Evaluates the passed-in map against the set of categories and queries
+     * that have been loaded, and returns the set of matching categories. Each
+     * key in the map is converted to a Lucene field for the purposes of query
+     * evaluation.
+     *
+     * @param evaluationData the map to be evaluated
+     * @return the set of matching category keys
+     */
+    public Set<String> evaluate(Map<String, String> evaluationData) {
         MemoryIndex mi = new MemoryIndex();
         for (Entry<String, String> entry : evaluationData.entrySet()) {
             mi.addField(entry.getKey(), entry.getValue(), analyzer);
@@ -93,7 +123,12 @@ public class LuceneEvaluator implements Closeable {
         return returnable;
     }
 
-    Iterable<String> getFieldList() {
+    /**
+     * Fetches the set of fields used in the union of all queries.
+     *
+     * @return the set of all field keys used
+     */
+    public Set<String> getFieldList() {
         Set<String> returnable = new TreeSet<>();
         for (Query q : queries.values()) {
             returnable.addAll(collectFields(q));
@@ -130,12 +165,17 @@ public class LuceneEvaluator implements Closeable {
         return fields;
     }
 
+    /**
+     * Implementation of Closeable that stops the watcher thread
+     *
+     * @throws IOException
+     */
     @Override
     public void close() throws IOException {
         stop();
     }
 
-    public class FileWatcher extends Thread {
+    private class FileWatcher extends Thread {
 
         private final File file;
         private AtomicBoolean stop = new AtomicBoolean(false);
