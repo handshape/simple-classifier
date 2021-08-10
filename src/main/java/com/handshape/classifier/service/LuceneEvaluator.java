@@ -72,7 +72,7 @@ public class LuceneEvaluator implements Closeable {
      */
     public LuceneEvaluator(File f) throws IOException {
         myFile = f;
-        loadCategories(myFile);
+        loadCategories();
         watcher = new FileWatcher(myFile);
         watcher.start();
     }
@@ -86,9 +86,14 @@ public class LuceneEvaluator implements Closeable {
         }
     }
 
-    private void loadCategories(File f) throws IOException {
+    /**
+     * Loads the categories from the file associated with this classifer.
+     * @throws IOException if the given file can't be loaded for any reason.
+     */
+    
+    public void loadCategories() throws IOException {
         Properties p = new Properties();
-        try ( FileInputStream fis = new FileInputStream(f)) {
+        try ( FileInputStream fis = new FileInputStream(myFile)) {
             p.load(fis);
             lastLoadTime = System.currentTimeMillis();
         }
@@ -207,7 +212,7 @@ public class LuceneEvaluator implements Closeable {
         public void doOnChange() {
             Logger.getLogger(LuceneEvaluator.class.getName()).log(Level.INFO, "Detected change in {0} - reloading.", myFile.getName());
             try {
-                loadCategories(myFile);
+                loadCategories();
             } catch (IOException ex) {
                 Logger.getLogger(LuceneEvaluator.class.getName()).log(Level.SEVERE, null, ex);
             }
