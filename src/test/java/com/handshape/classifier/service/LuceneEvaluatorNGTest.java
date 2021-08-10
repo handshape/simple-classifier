@@ -7,6 +7,7 @@ import java.util.Arrays;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import org.apache.commons.io.FileUtils;
 import static org.testng.Assert.*;
 
 /**
@@ -45,11 +46,43 @@ public class LuceneEvaluatorNGTest {
         System.out.println("getFieldList");
         try ( LuceneEvaluator instance = new LuceneEvaluator(new File(getClass().getResource("/testcategories.properties").toURI()))) {
             assertEquals(instance.getFieldList(), new TreeSet(Arrays.asList(new String[]{
-                "title", 
+                "title",
                 LuceneEvaluator.DEFAULT_FIELD_NAME
             })));
         }
+    }
 
+    /**
+     * Integration test of file-watching behaviour.
+     */
+    @org.testng.annotations.Test
+    public void testFileWatcher() throws IOException, URISyntaxException, InterruptedException {
+        System.out.println("Integration Test - file watching");
+        TreeMap<String, String> testMap = new TreeMap<>();
+        testMap.put("text", "shabbadoo babbaloo");
+        testMap.put("testfield", "foo bar baz");
+        File tempFile = File.createTempFile("integration", ".properties");
+        tempFile.deleteOnExit();
+        FileUtils.write(tempFile, "alpha:shabbadoo\n", "UTF-8", true);
+        try ( LuceneEvaluator instance = new LuceneEvaluator(tempFile)) {
+            assertEquals(instance.getFieldList(), new TreeSet(Arrays.asList(new String[]{
+                LuceneEvaluator.DEFAULT_FIELD_NAME
+            })));
+            assertEquals(instance.evaluate(testMap), new TreeSet(Arrays.asList(new String[]{
+                "alpha"
+            })));
+            FileUtils.write(tempFile, "beta:babbaloo AND testfield:foo\n", "UTF-8", true);
+            Thread.sleep(1000);
+            assertEquals(instance.getFieldList(), new TreeSet(Arrays.asList(new String[]{
+                "testfield",
+                LuceneEvaluator.DEFAULT_FIELD_NAME
+            })));
+            assertEquals(instance.evaluate(testMap), new TreeSet(Arrays.asList(new String[]{
+                "alpha",
+                "beta"
+            })));
+
+        }
     }
 
 }

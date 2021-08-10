@@ -9,7 +9,6 @@ import com.sun.net.httpserver.HttpServer;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.UnsupportedEncodingException;
 import java.net.InetSocketAddress;
@@ -23,7 +22,6 @@ import java.util.TreeMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import org.apache.commons.io.IOUtils;
-import org.apache.lucene.queryparser.classic.ParseException;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
@@ -92,6 +90,8 @@ public class SimpleClassifierService {
         }
 
         @Override
+        @edu.umd.cs.findbugs.annotations.SuppressFBWarnings(value = "RV_RETURN_VALUE_IGNORED_INFERRED", 
+        justification = "No need to store references to elements that don't get used afterwards.")
         public void handle(HttpExchange exchange) throws IOException {
             //System.out.println(exchange.getRequestURI());
             Map<String, String> evaluationData = null;
@@ -139,25 +139,29 @@ public class SimpleClassifierService {
         private void evaluateAndRespond(Map<String, String> evaluationData, HttpExchange exchange) throws IOException {
             int code = 200;
             String response;
+            String contentType = "text/plain";
             JsonObject responseObject = new JsonObject();
             try {
                 Set<String> categories = evaluator.evaluate(evaluationData);
                 JsonArray categoriesArray = new JsonArray(categories);
                 responseObject.put("categories", categoriesArray);
+                response = responseObject.toJson();
+                contentType = "application/json";
             } catch (Exception ex) {
                 Logger.getLogger(SimpleClassifierService.class.getName()).log(Level.SEVERE, null, ex);
                 response = "Error: " + ex.getMessage();
                 code = 500;
             }
-            sendResponse(exchange, code, "application/json", responseObject.toJson());
+            sendResponse(exchange, code, contentType, response);
         }
 
         private void sendResponse(HttpExchange exchange, int responseCode, String contentType, String response) throws IOException {
             exchange.getResponseHeaders().add("Content-Type", contentType);
             exchange.sendResponseHeaders(responseCode, response.length());
-            OutputStream os = exchange.getResponseBody();
-            os.write(response.getBytes());
-            os.close();
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(response.getBytes("UTF-8"));
+                os.flush();
+            }
         }
 
         private Map<String, String> splitQuery(URI url) throws UnsupportedEncodingException {

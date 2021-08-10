@@ -13,7 +13,6 @@ import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.ProtocolException;
 import java.net.URL;
-import java.util.Map;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import static org.testng.Assert.*;
@@ -23,6 +22,7 @@ import static org.testng.Assert.*;
  * @author jturner
  */
 public class SimpleClassifierServiceNGTest {
+    private static final String CHARSET = "UTF-8";
 
     public SimpleClassifierServiceNGTest() {
     }
@@ -43,7 +43,7 @@ public class SimpleClassifierServiceNGTest {
             assertTrue(grabURL("http://localhost:8888/?text=elbows").getCollection(categoryKey).contains("positiveTest1"), "integration tests");
             // POST JSON
             System.out.println("  Testing POST JSON");
-            assertTrue(postURL("http://localhost:8888/", "{\"text\":\"elbows\"}", "application/json; utf-8").getCollection(categoryKey).contains("positiveTest1"), "integration tests");
+            assertTrue(postURL("http://localhost:8888/", "{\"text\":\"elbows\"}", "application/json; "+CHARSET).getCollection(categoryKey).contains("positiveTest1"), "integration tests");
             // POST url form encoding
             System.out.println("  Testing POST x-www-form-urlencoded");
             assertTrue(postURL("http://localhost:8888/", "text=elbows", "application/x-www-form-urlencoded").getCollection(categoryKey).contains("positiveTest1"), "integration tests");
@@ -60,7 +60,7 @@ public class SimpleClassifierServiceNGTest {
     }
 
     private JsonObject grabURL(String url) throws MalformedURLException, IOException, JsonException {
-        return (JsonObject) Jsoner.deserialize(new InputStreamReader(new URL(url).openStream(), "UTF-8"));
+        return (JsonObject) Jsoner.deserialize(new InputStreamReader(new URL(url).openStream(), CHARSET));
     }
 
     private JsonObject postURL(String urlSpec, String body, String contentType) throws MalformedURLException, ProtocolException, IOException {
@@ -75,14 +75,13 @@ public class SimpleClassifierServiceNGTest {
         con.setDoOutput(true);
 
         try ( OutputStream os = con.getOutputStream()) {
-            byte[] input = body.getBytes("utf-8");
+            byte[] input = body.getBytes(CHARSET);
             os.write(input, 0, input.length);
         }
 
-        int code = con.getResponseCode();
-        try ( BufferedReader br = new BufferedReader(new InputStreamReader(con.getInputStream(), "utf-8"))) {
+        try ( BufferedReader br = new BufferedReader(new InputStreamReader(con.getInputStream(), CHARSET))) {
             StringBuilder response = new StringBuilder();
-            String responseLine = null;
+            String responseLine;
             while ((responseLine = br.readLine()) != null) {
                 response.append(responseLine.trim());
             }

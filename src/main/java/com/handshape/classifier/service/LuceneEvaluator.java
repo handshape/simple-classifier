@@ -80,7 +80,9 @@ public class LuceneEvaluator implements Closeable {
 
     private void loadCategories(File f) throws IOException {
         Properties p = new Properties();
-        p.load(new FileInputStream(f));
+        try ( FileInputStream fis = new FileInputStream(f)) {
+            p.load(fis);
+        }
         TreeMap<String, Query> newQueries = new TreeMap<>();
         QueryParser parser = new QueryParser("text", analyzer);
         parser.setAllowLeadingWildcard(true);
@@ -178,7 +180,7 @@ public class LuceneEvaluator implements Closeable {
     private class FileWatcher extends Thread {
 
         private final File file;
-        private AtomicBoolean stop = new AtomicBoolean(false);
+        private final AtomicBoolean stop = new AtomicBoolean(false);
 
         public FileWatcher(File file) {
             super(file.getName() + " watcher");
@@ -194,7 +196,7 @@ public class LuceneEvaluator implements Closeable {
         }
 
         public void doOnChange() {
-            Logger.getLogger(LuceneEvaluator.class.getName()).log(Level.INFO, "Detected change in " + myFile.getName() + " - reloading.");
+            Logger.getLogger(LuceneEvaluator.class.getName()).log(Level.INFO, "Detected change in {0} - reloading.", myFile.getName());
             try {
                 loadCategories(myFile);
             } catch (IOException ex) {
@@ -206,39 +208,41 @@ public class LuceneEvaluator implements Closeable {
         public void run() {
             try ( WatchService watcher = FileSystems.getDefault().newWatchService()) {
                 Path path = file.toPath().toAbsolutePath().getParent();
-                path.register(watcher, StandardWatchEventKinds.ENTRY_MODIFY);
-                while (!isStopped()) {
-                    WatchKey key;
-                    try {
-                        key = watcher.poll(25, TimeUnit.MILLISECONDS);
-                    } catch (InterruptedException e) {
-                        return;
-                    }
-                    if (key == null) {
-                        Thread.yield();
-                        continue;
-                    }
-
-                    for (WatchEvent<?> event : key.pollEvents()) {
-                        WatchEvent.Kind<?> kind = event.kind();
-
-                        @SuppressWarnings("unchecked")
-                        WatchEvent<Path> ev = (WatchEvent<Path>) event;
-                        Path filename = ev.context();
-
-                        if (kind == StandardWatchEventKinds.OVERFLOW) {
+                if (path != null) {
+                    path.register(watcher, StandardWatchEventKinds.ENTRY_MODIFY);
+                    while (!isStopped()) {
+                        WatchKey key;
+                        try {
+                            key = watcher.poll(25, TimeUnit.MILLISECONDS);
+                        } catch (InterruptedException e) {
+                            return;
+                        }
+                        if (key == null) {
                             Thread.yield();
                             continue;
-                        } else if (kind == java.nio.file.StandardWatchEventKinds.ENTRY_MODIFY
-                                && filename.toString().equals(file.getName())) {
-                            doOnChange();
                         }
-                        boolean valid = key.reset();
-                        if (!valid) {
-                            break;
+
+                        for (WatchEvent<?> event : key.pollEvents()) {
+                            WatchEvent.Kind<?> kind = event.kind();
+
+                            @SuppressWarnings("unchecked")
+                            WatchEvent<Path> ev = (WatchEvent<Path>) event;
+                            Path filename = ev.context();
+
+                            if (kind == StandardWatchEventKinds.OVERFLOW) {
+                                Thread.yield();
+                                continue;
+                            } else if (kind == java.nio.file.StandardWatchEventKinds.ENTRY_MODIFY
+                                    && filename.toString().equals(file.getName())) {
+                                doOnChange();
+                            }
+                            boolean valid = key.reset();
+                            if (!valid) {
+                                break;
+                            }
                         }
+                        Thread.yield();
                     }
-                    Thread.yield();
                 }
             } catch (Throwable e) {
                 // Log or rethrow the error
