@@ -61,7 +61,7 @@ public class LuceneEvaluatorNGTest {
         TreeMap<String, String> testMap = new TreeMap<>();
         testMap.put("text", "shabbadoo babbaloo");
         testMap.put("testfield", "foo bar baz");
-        File tempFile = File.createTempFile("integration", ".properties");
+        File tempFile = File.createTempFile("integration", ".properties", new File("."));
         tempFile.deleteOnExit();
         FileUtils.write(tempFile, "alpha:shabbadoo\n", "UTF-8", true);
         try ( LuceneEvaluator instance = new LuceneEvaluator(tempFile)) {
