@@ -44,6 +44,13 @@ import org.apache.lucene.search.TermQuery;
 public class LuceneEvaluator implements Closeable {
 
     /**
+     * @return the lastLoadTime
+     */
+    public long getLastLoadTime() {
+        return lastLoadTime;
+    }
+
+    /**
      * Field name that will be used for query terms that have no specified
      * field.
      */
@@ -53,6 +60,7 @@ public class LuceneEvaluator implements Closeable {
     private final File myFile;
     private final FileWatcher watcher;
     private Map<String, Query> queries = new TreeMap<>();
+    private long lastLoadTime = 0L;
 
     /**
      * Constructor for a new Lucene evaluator. Malformed queries get logged to
@@ -82,6 +90,7 @@ public class LuceneEvaluator implements Closeable {
         Properties p = new Properties();
         try ( FileInputStream fis = new FileInputStream(f)) {
             p.load(fis);
+            lastLoadTime = System.currentTimeMillis();
         }
         TreeMap<String, Query> newQueries = new TreeMap<>();
         QueryParser parser = new QueryParser("text", analyzer);
@@ -221,7 +230,6 @@ public class LuceneEvaluator implements Closeable {
                             Thread.yield();
                             continue;
                         }
-
                         for (WatchEvent<?> event : key.pollEvents()) {
                             WatchEvent.Kind<?> kind = event.kind();
 
@@ -249,5 +257,4 @@ public class LuceneEvaluator implements Closeable {
             }
         }
     }
-
 }
