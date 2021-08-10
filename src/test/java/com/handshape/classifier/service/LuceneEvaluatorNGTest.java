@@ -71,8 +71,14 @@ public class LuceneEvaluatorNGTest {
             assertEquals(instance.evaluate(testMap), new TreeSet(Arrays.asList(new String[]{
                 "alpha"
             })));
+            long oldTime = instance.getLastLoadTime();
             FileUtils.write(tempFile, "beta:babbaloo AND testfield:foo\n", "UTF-8", true);
-            Thread.sleep(1000);
+            while (oldTime == instance.getLastLoadTime()) {
+                Thread.sleep(100);
+                if (System.currentTimeMillis() > oldTime + 10000) {
+                    throw new InterruptedException("Change not detected ten seconds after being written to disk.");
+                }
+            }
             assertEquals(instance.getFieldList(), new TreeSet(Arrays.asList(new String[]{
                 "testfield",
                 LuceneEvaluator.DEFAULT_FIELD_NAME
